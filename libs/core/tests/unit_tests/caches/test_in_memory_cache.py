@@ -117,3 +117,49 @@ async def test_aclear(cache: InMemoryCache) -> None:
     await cache.aupdate(prompt, llm_string, generations)
     await cache.aclear()
     assert await cache.alookup(prompt, llm_string) is None
+
+
+def test_update_existing_key_at_maxsize_does_not_evict() -> None:
+    """Test re-caching an existing key does not evict an unrelated entry.
+
+    Regression test: eviction ran before checking whether the key was new, so updating a
+    key already in a full cache dropped the oldest entry and left `maxsize - 1` items.
+    """
+    cache = InMemoryCache(maxsize=2)
+
+    prompt1, llm_string1, generations1 = cache_item(1)
+    prompt2, llm_string2, generations2 = cache_item(2)
+    cache.update(prompt1, llm_string1, generations1)
+    cache.update(prompt2, llm_string2, generations2)
+
+    _, _, generations2_new = cache_item(22)
+    cache.update(prompt2, llm_string2, generations2_new)
+
+    assert cache.lookup(prompt1, llm_string1) == generations1
+    assert cache.lookup(prompt2, llm_string2) == generations2_new
+    assert len(cache._cache) == 2
+
+    # A genuinely new key must still evict the oldest entry.
+    prompt3, llm_string3, generations3 = cache_item(3)
+    cache.update(prompt3, llm_string3, generations3)
+
+    assert cache.lookup(prompt1, llm_string1) is None
+    assert cache.lookup(prompt2, llm_string2) == generations2_new
+    assert cache.lookup(prompt3, llm_string3) == generations3
+
+
+async def test_aupdate_existing_key_at_maxsize_does_not_evict() -> None:
+    """Test the async path shares the fixed eviction behaviour."""
+    cache = InMemoryCache(maxsize=2)
+
+    prompt1, llm_string1, generations1 = cache_item(1)
+    prompt2, llm_string2, generations2 = cache_item(2)
+    await cache.aupdate(prompt1, llm_string1, generations1)
+    await cache.aupdate(prompt2, llm_string2, generations2)
+
+    _, _, generations2_new = cache_item(22)
+    await cache.aupdate(prompt2, llm_string2, generations2_new)
+
+    assert await cache.alookup(prompt1, llm_string1) == generations1
+    assert await cache.alookup(prompt2, llm_string2) == generations2_new
+    assert len(cache._cache) == 2
