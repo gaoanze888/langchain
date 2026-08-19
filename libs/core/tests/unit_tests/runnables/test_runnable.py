@@ -4039,6 +4039,76 @@ def test_retry_batch_preserves_order() -> None:
     assert results == [0, 1, 2]
 
 
+def test_retry_batch_keeps_failures_at_their_own_index() -> None:
+    """Test a still-failing input stays an exception at its own output position.
+
+    Regression test: the final output was assembled by popping the last attempt's result
+    list positionally. That list only covers the indices still pending in that attempt,
+    so an input that kept failing received another input's successful result instead of
+    its exception.
+    """
+    failed_once = False
+
+    def process(name: str) -> str:
+        nonlocal failed_once
+        if name == "ok":
+            return "ok-result"
+        if name == "retry_then_ok":
+            if not failed_once:
+                failed_once = True
+                msg = "first"
+                raise ValueError(msg)
+            return "retry-result"
+        msg = "always"
+        raise ValueError(msg)
+
+    runnable = RunnableLambda(process).with_retry(
+        stop_after_attempt=2,
+        retry_if_exception_type=(ValueError,),
+        wait_exponential_jitter=False,
+    )
+
+    results = runnable.batch(
+        ["ok", "retry_then_ok", "always_fail"], return_exceptions=True
+    )
+
+    assert results[0] == "ok-result"
+    assert results[1] == "retry-result"
+    assert isinstance(results[2], ValueError)
+
+
+async def test_async_retry_batch_keeps_failures_at_their_own_index() -> None:
+    """Test abatch shares the fixed index mapping for still-failing inputs."""
+    failed_once = False
+
+    def process(name: str) -> str:
+        nonlocal failed_once
+        if name == "ok":
+            return "ok-result"
+        if name == "retry_then_ok":
+            if not failed_once:
+                failed_once = True
+                msg = "first"
+                raise ValueError(msg)
+            return "retry-result"
+        msg = "always"
+        raise ValueError(msg)
+
+    runnable = RunnableLambda(process).with_retry(
+        stop_after_attempt=2,
+        retry_if_exception_type=(ValueError,),
+        wait_exponential_jitter=False,
+    )
+
+    results = await runnable.abatch(
+        ["ok", "retry_then_ok", "always_fail"], return_exceptions=True
+    )
+
+    assert results[0] == "ok-result"
+    assert results[1] == "retry-result"
+    assert isinstance(results[2], ValueError)
+
+
 async def test_async_retry_batch_preserves_order() -> None:
     """Async variant of order preservation regression test."""
     first_fail: set[int] = {1}

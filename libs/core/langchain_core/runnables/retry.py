@@ -232,6 +232,10 @@ class RunnableRetry(RunnableBindingBase[Input, Output]):  # type: ignore[no-rede
         **kwargs: Any,
     ) -> list[Output | Exception]:
         results_map: dict[int, Output] = {}
+        # Failures are recorded by original index too: the last attempt's `result` list
+        # only covers the indices still pending in that attempt, so it cannot be
+        # consumed positionally when building the final output.
+        failures_map: dict[int, Exception] = {}
 
         not_set: list[Output] = []
         result = not_set
@@ -261,11 +265,12 @@ class RunnableRetry(RunnableBindingBase[Input, Output]):  # type: ignore[no-rede
                     # back to their original indices.
                     first_exception = None
                     for offset, r in enumerate(result):
+                        orig_idx = remaining_indices[offset]
                         if isinstance(r, Exception):
                             if not first_exception:
                                 first_exception = r
+                            failures_map[orig_idx] = r
                             continue
-                        orig_idx = remaining_indices[offset]
                         results_map[orig_idx] = r
                     # If any exception occurred, raise it, to retry the failed ones
                     if first_exception:
@@ -283,6 +288,8 @@ class RunnableRetry(RunnableBindingBase[Input, Output]):  # type: ignore[no-rede
         for idx in range(len(inputs)):
             if idx in results_map:
                 outputs.append(results_map[idx])
+            elif idx in failures_map:
+                outputs.append(failures_map[idx])
             else:
                 outputs.append(result.pop(0))
         return outputs
@@ -308,6 +315,10 @@ class RunnableRetry(RunnableBindingBase[Input, Output]):  # type: ignore[no-rede
         **kwargs: Any,
     ) -> list[Output | Exception]:
         results_map: dict[int, Output] = {}
+        # Failures are recorded by original index too: the last attempt's `result` list
+        # only covers the indices still pending in that attempt, so it cannot be
+        # consumed positionally when building the final output.
+        failures_map: dict[int, Exception] = {}
 
         not_set: list[Output] = []
         result = not_set
@@ -336,11 +347,12 @@ class RunnableRetry(RunnableBindingBase[Input, Output]):  # type: ignore[no-rede
                     # back to their original indices.
                     first_exception = None
                     for offset, r in enumerate(result):
+                        orig_idx = remaining_indices[offset]
                         if isinstance(r, Exception):
                             if not first_exception:
                                 first_exception = r
+                            failures_map[orig_idx] = r
                             continue
-                        orig_idx = remaining_indices[offset]
                         results_map[orig_idx] = r
                     # If any exception occurred, raise it, to retry the failed ones
                     if first_exception:
@@ -358,6 +370,8 @@ class RunnableRetry(RunnableBindingBase[Input, Output]):  # type: ignore[no-rede
         for idx in range(len(inputs)):
             if idx in results_map:
                 outputs.append(results_map[idx])
+            elif idx in failures_map:
+                outputs.append(failures_map[idx])
             else:
                 outputs.append(result.pop(0))
         return outputs
