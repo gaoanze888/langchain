@@ -2241,6 +2241,43 @@ def _convert_to_openai_tool_calls(tool_calls: list[ToolCall]) -> list[dict[str, 
     ]
 
 
+# Provider blobs whose character length bears no relation to the tokens billed.
+# `encrypted_content` is OpenAI's opaque reasoning payload; `signature` is the
+# thought signature emitted by Anthropic, Google and Bedrock. Both routinely run
+# to several kilobytes, so counting them at `chars_per_token` dominates the
+# estimate for any message carrying a reasoning block.
+_OPAQUE_EXTRAS_KEYS = frozenset({"encrypted_content", "signature"})
+
+
+def _reasoning_block_chars(block: dict[str, Any], reported: int | None) -> int:
+    """Characters to attribute to a reasoning block.
+
+    When the provider reported a reasoning token count, the opaque blobs are
+    redundant: the exact number is already known, so counting their length only
+    adds noise. When it did not, the blobs are retained — dropping them would
+    turn today's over-estimate into a large *under*-estimate, and for
+    context-window management under-estimating is the dangerous direction.
+
+    Args:
+        block: The reasoning content block.
+        reported: Reasoning tokens reported by the provider, if any.
+
+    Returns:
+        Character count to add for this block. `0` when `reported` is available,
+        since those tokens are added directly rather than derived from length.
+    """
+    if reported is None:
+        return len(repr(block))
+    extras = block.get("extras")
+    if not isinstance(extras, dict) or _OPAQUE_EXTRAS_KEYS.isdisjoint(extras):
+        return len(repr(block))
+    trimmed = dict(block)
+    trimmed["extras"] = {
+        k: v for k, v in extras.items() if k not in _OPAQUE_EXTRAS_KEYS
+    }
+    return len(repr(trimmed))
+
+
 def count_tokens_approximately(
     messages: Iterable[MessageLikeRepresentation],
     *,
@@ -2334,6 +2371,17 @@ def count_tokens_approximately(
     for message in converted_messages:
         message_chars = 0
 
+        # A provider-reported reasoning token count, when present, is exact —
+        # prefer it over deriving reasoning cost from blob length.
+        reported_reasoning: int | None = None
+        usage = getattr(message, "usage_metadata", None)
+        if isinstance(usage, dict):
+            details = usage.get("output_token_details")
+            if isinstance(details, dict):
+                candidate = details.get("reasoning")
+                if isinstance(candidate, int) and candidate >= 0:
+                    reported_reasoning = candidate
+
         if isinstance(message.content, str):
             message_chars += len(message.content)
         # Handle multimodal content (list of content blocks)
@@ -2352,6 +2400,15 @@ def count_tokens_approximately(
                     elif block_type == "text":
                         text = block.get("text", "")
                         message_chars += len(text)
+                    # Reasoning blocks: prefer the reported token count over
+                    # measuring the length of opaque provider blobs.
+                    elif block_type == "reasoning":
+                        message_chars += _reasoning_block_chars(
+                            block, reported_reasoning
+                        )
+                        if reported_reasoning is not None:
+                            token_count += reported_reasoning
+                            reported_reasoning = None
                     # Conservative estimate for unknown block types
                     else:
                         message_chars += len(repr(block))

@@ -1547,6 +1547,57 @@ def test_count_tokens_approximately_list_content() -> None:
     assert count_tokens_approximately(messages) == 17
 
 
+def test_count_tokens_approximately_uses_reported_reasoning_tokens() -> None:
+    """Opaque reasoning blobs should not dominate counts when usage is known."""
+
+    def _message(encrypted_content_length: int) -> AIMessage:
+        return AIMessage(
+            content=[
+                {
+                    "type": "reasoning",
+                    "reasoning": "",
+                    "extras": {
+                        "encrypted_content": "x" * encrypted_content_length,
+                        "summary": [],
+                        "status": "completed",
+                    },
+                },
+                {"type": "text", "text": "final answer"},
+            ],
+            usage_metadata={
+                "input_tokens": 10,
+                "output_tokens": 150,
+                "total_tokens": 160,
+                "output_token_details": {"reasoning": 120},
+            },
+        )
+
+    small_blob = count_tokens_approximately([_message(100)])
+    large_blob = count_tokens_approximately([_message(20_000)])
+
+    assert small_blob == large_blob
+
+
+def test_count_tokens_approximately_keeps_blob_fallback_without_usage() -> None:
+    """Without usage metadata, keep the conservative blob-length fallback."""
+
+    def _message(encrypted_content_length: int) -> AIMessage:
+        return AIMessage(
+            content=[
+                {
+                    "type": "reasoning",
+                    "reasoning": "",
+                    "extras": {"encrypted_content": "x" * encrypted_content_length},
+                }
+            ]
+        )
+
+    small_blob = count_tokens_approximately([_message(100)])
+    large_blob = count_tokens_approximately([_message(20_000)])
+
+    assert large_blob > small_blob + 1_000
+
+
 def test_count_tokens_approximately_tool_calls() -> None:
     tool_calls = [{"name": "test_tool", "args": {"foo": "bar"}, "id": "1"}]
     messages = [
