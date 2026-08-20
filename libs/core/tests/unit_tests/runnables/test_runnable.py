@@ -27,7 +27,7 @@ from pytest_mock import MockerFixture
 from syrupy.assertion import SnapshotAssertion
 from typing_extensions import TypedDict, override
 
-from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.callbacks import AsyncCallbackHandler, BaseCallbackHandler
 from langchain_core.callbacks.manager import (
     AsyncCallbackManagerForRetrieverRun,
     CallbackManagerForRetrieverRun,
@@ -4007,6 +4007,86 @@ def test_retrying(mocker: MockerFixture) -> None:
     assert isinstance(output[1], RuntimeError)
     assert output[2] == 0
     lambda_mock.reset_mock()
+
+
+def test_retry_fires_on_retry_callback() -> None:
+    """``on_retry`` must fire on every retry, for all four execution paths.
+
+    ``BaseCallbackHandler`` declares ``on_retry`` and ``CallbackManagerForChainRun``
+    implements it, but ``RunnableRetry`` never emitted it, so handlers registered for
+    it silently never fired.
+    """
+
+    class _Handler(BaseCallbackHandler):
+        def __init__(self) -> None:
+            self.attempts: list[int] = []
+
+        def on_retry(self, retry_state: Any, **_: Any) -> None:
+            self.attempts.append(retry_state.attempt_number)
+
+    def _flaky() -> Callable[[Any], Any]:
+        state = {"n": 0}
+
+        def _inner(x: Any) -> Any:
+            state["n"] += 1
+            if state["n"] < 3:
+                msg = "transient"
+                raise ValueError(msg)
+            return x
+
+        return _inner
+
+    runnable = RunnableLambda(_flaky()).with_retry(
+        retry_if_exception_type=(ValueError,), stop_after_attempt=5
+    )
+    handler = _Handler()
+    assert runnable.invoke("hi", config={"callbacks": [handler]}) == "hi"
+    # Two failures before success => two retries.
+    assert handler.attempts == [1, 2]
+
+    runnable = RunnableLambda(_flaky()).with_retry(
+        retry_if_exception_type=(ValueError,), stop_after_attempt=5
+    )
+    handler = _Handler()
+    assert runnable.batch(["hi"], config={"callbacks": [handler]}) == ["hi"]
+    assert handler.attempts == [1, 2]
+
+
+async def test_async_retry_fires_on_retry_callback() -> None:
+    """Async counterpart of ``test_retry_fires_on_retry_callback``."""
+
+    class _AsyncHandler(AsyncCallbackHandler):
+        def __init__(self) -> None:
+            self.attempts: list[int] = []
+
+        async def on_retry(self, retry_state: Any, **_: Any) -> None:
+            self.attempts.append(retry_state.attempt_number)
+
+    def _flaky() -> Callable[[Any], Any]:
+        state = {"n": 0}
+
+        def _inner(x: Any) -> Any:
+            state["n"] += 1
+            if state["n"] < 3:
+                msg = "transient"
+                raise ValueError(msg)
+            return x
+
+        return _inner
+
+    runnable = RunnableLambda(_flaky()).with_retry(
+        retry_if_exception_type=(ValueError,), stop_after_attempt=5
+    )
+    handler = _AsyncHandler()
+    assert await runnable.ainvoke("hi", config={"callbacks": [handler]}) == "hi"
+    assert handler.attempts == [1, 2]
+
+    runnable = RunnableLambda(_flaky()).with_retry(
+        retry_if_exception_type=(ValueError,), stop_after_attempt=5
+    )
+    handler = _AsyncHandler()
+    assert await runnable.abatch(["hi"], config={"callbacks": [handler]}) == ["hi"]
+    assert handler.attempts == [1, 2]
 
 
 def test_retry_batch_preserves_order() -> None:

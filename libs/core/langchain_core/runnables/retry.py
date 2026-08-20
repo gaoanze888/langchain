@@ -1,5 +1,6 @@
 """`Runnable` that retries a `Runnable` if it fails."""
 
+from collections.abc import Awaitable, Callable
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -149,6 +150,37 @@ class RunnableRetry(RunnableBindingBase[Input, Output]):  # type: ignore[no-rede
 
         return kwargs
 
+    @staticmethod
+    def _before_sleep(
+        run_manager: "CallbackManagerForChainRun | list[CallbackManagerForChainRun]",
+    ) -> Callable[[RetryCallState], None]:
+        """Build a tenacity ``before_sleep`` hook that emits ``on_retry``.
+
+        ``on_retry`` is part of the callback interface but was never emitted by
+        ``RunnableRetry``, so handlers registered for it never fired.
+        """
+
+        def _hook(retry_state: RetryCallState) -> None:
+            managers = run_manager if isinstance(run_manager, list) else [run_manager]
+            for manager in managers:
+                manager.on_retry(retry_state)
+
+        return _hook
+
+    @staticmethod
+    def _abefore_sleep(
+        run_manager: "AsyncCallbackManagerForChainRun"
+        " | list[AsyncCallbackManagerForChainRun]",
+    ) -> Callable[[RetryCallState], Awaitable[None]]:
+        """Async counterpart of :meth:`_before_sleep`."""
+
+        async def _hook(retry_state: RetryCallState) -> None:
+            managers = run_manager if isinstance(run_manager, list) else [run_manager]
+            for manager in managers:
+                await manager.on_retry(retry_state)
+
+        return _hook
+
     def _sync_retrying(self, **kwargs: Any) -> Retrying:
         return Retrying(**self._kwargs_retrying, **kwargs)
 
@@ -183,7 +215,9 @@ class RunnableRetry(RunnableBindingBase[Input, Output]):  # type: ignore[no-rede
         config: RunnableConfig,
         **kwargs: Any,
     ) -> Output:
-        for attempt in self._sync_retrying(reraise=True):
+        for attempt in self._sync_retrying(
+            reraise=True, before_sleep=self._before_sleep(run_manager)
+        ):
             with attempt:
                 result = super().invoke(
                     input_,
@@ -207,7 +241,9 @@ class RunnableRetry(RunnableBindingBase[Input, Output]):  # type: ignore[no-rede
         config: RunnableConfig,
         **kwargs: Any,
     ) -> Output:
-        async for attempt in self._async_retrying(reraise=True):
+        async for attempt in self._async_retrying(
+            reraise=True, before_sleep=self._abefore_sleep(run_manager)
+        ):
             with attempt:
                 result = await super().ainvoke(
                     input_,
@@ -236,7 +272,9 @@ class RunnableRetry(RunnableBindingBase[Input, Output]):  # type: ignore[no-rede
         not_set: list[Output] = []
         result = not_set
         try:
-            for attempt in self._sync_retrying():
+            for attempt in self._sync_retrying(
+                before_sleep=self._before_sleep(run_manager)
+            ):
                 with attempt:
                     # Retry for inputs that have not yet succeeded
                     # Determine which original indices remain.
@@ -312,7 +350,9 @@ class RunnableRetry(RunnableBindingBase[Input, Output]):  # type: ignore[no-rede
         not_set: list[Output] = []
         result = not_set
         try:
-            async for attempt in self._async_retrying():
+            async for attempt in self._async_retrying(
+                before_sleep=self._abefore_sleep(run_manager)
+            ):
                 with attempt:
                     # Retry for inputs that have not yet succeeded
                     # Determine which original indices remain.
