@@ -5913,6 +5913,27 @@ def test_runnable_parallel_input_schema_accepts_what_invoke_accepts() -> None:
         schema.model_validate(value)
 
 
+def test_parallel_input_schema_fix_reaches_compositions() -> None:
+    """Test compositions built on a parallel inherit the corrected input schema.
+
+    `RunnableSequence` and `RunnableBranch` derive their input schema from the first
+    step, so a nested parallel or a `parallel | step` sequence carried the same
+    unsatisfiable `root` field.
+    """
+    inner = RunnableParallel(a=RunnablePassthrough(), b=RunnableLambda(lambda x: x))
+
+    for runnable in (
+        RunnableParallel(outer=inner),
+        inner | RunnableLambda(lambda x: x),
+    ):
+        schema = runnable.get_input_schema()
+        assert "root" not in schema.model_fields
+
+        value = {"k": 1}
+        runnable.invoke(value)
+        schema.model_validate(value)
+
+
 def test_runnable_parallel_input_schema_keeps_real_step_fields() -> None:
     """Test excluding the root field does not drop genuine step fields.
 
