@@ -894,11 +894,13 @@ def filter_messages(
 
     Returns:
         A list of Messages that meets at least one of the `incl_*` conditions and none
-        of the `excl_*` conditions. If not `incl_*` conditions are specified then
+        of the `excl_*` conditions. If no `incl_*` conditions are specified then
         anything that is not explicitly excluded will be included.
 
-    Raises:
-        ValueError: If two incompatible arguments are provided.
+        Include and exclude filters compose: a message selected by an include filter
+        is still omitted if it also matches an exclude filter. String message types
+        are matched against `message.type`; unrecognized strings simply match no
+        messages, which also supports custom message subclasses with custom types.
 
     Example:
         ```python
