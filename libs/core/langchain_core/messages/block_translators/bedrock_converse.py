@@ -159,11 +159,14 @@ def _convert_to_v1_from_converse(message: AIMessage) -> list[types.ContentBlock]
         # Converse outputs multiple chunks containing response metadata
         return []
 
+    content: list[str | dict[str, Any]]
     if isinstance(message.content, str):
-        message.content = [{"type": "text", "text": message.content}]
+        content = [{"type": "text", "text": message.content}]
+    else:
+        content = message.content
 
     def _iter_blocks() -> Iterator[types.ContentBlock]:
-        for block in message.content:
+        for block in content:
             if not isinstance(block, dict):
                 continue
             block_type = block.get("type")
@@ -274,7 +277,10 @@ def _convert_to_v1_from_converse(message: AIMessage) -> list[types.ContentBlock]
                     "value": block,
                 }
                 if "index" in new_block["value"]:
-                    new_block["index"] = new_block["value"].pop("index")
+                    new_block["index"] = new_block["value"]["index"]
+                    new_block["value"] = {
+                        k: v for k, v in new_block["value"].items() if k != "index"
+                    }
                 yield new_block
 
     return list(_iter_blocks())

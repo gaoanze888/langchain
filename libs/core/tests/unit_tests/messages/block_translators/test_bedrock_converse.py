@@ -377,3 +377,40 @@ def test_convert_to_v1_from_converse_input() -> None:
     ]
 
     assert message.content_blocks == expected
+
+
+def test_bedrock_converse_content_blocks_does_not_mutate_string_content() -> None:
+    """Reading content_blocks must not rewrite message.content in place."""
+    message = AIMessage(
+        content="hello",
+        response_metadata={"model_provider": "bedrock_converse"},
+    )
+
+    assert message.content_blocks == [{"type": "text", "text": "hello"}]
+    assert message.content == "hello"
+    assert message.content_blocks == [{"type": "text", "text": "hello"}]
+
+
+def test_bedrock_converse_content_blocks_does_not_mutate_unknown_block() -> None:
+    """Moving index to the wrapper must not mutate the original provider block."""
+    original = {"type": "custom", "payload": "value", "index": 3}
+    message = AIMessage(
+        content=[original],
+        response_metadata={"model_provider": "bedrock_converse"},
+    )
+
+    assert message.content_blocks == [
+        {
+            "type": "non_standard",
+            "value": {"type": "custom", "payload": "value"},
+            "index": 3,
+        }
+    ]
+    assert message.content == [{"type": "custom", "payload": "value", "index": 3}]
+    assert message.content_blocks == [
+        {
+            "type": "non_standard",
+            "value": {"type": "custom", "payload": "value"},
+            "index": 3,
+        }
+    ]
