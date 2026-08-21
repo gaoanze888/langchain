@@ -304,6 +304,15 @@ _ANTHROPIC_BUILTIN_TOOL_TYPES: frozenset[str] = frozenset(
     }
 )
 _ANTHROPIC_DATED_BUILTIN_TOOL_TYPE = re.compile(r"_\d{8}$")
+_ANTHROPIC_DATED_BUILTIN_TOOL_PREFIXES: frozenset[str] = frozenset(
+    {
+        "bash",
+        "code_execution",
+        "computer_use",
+        "text_editor",
+        "web_search",
+    }
+)
 # Every field of the Gemini `Tool` payload, `functionDeclarations` included: a Gemini
 # tool object is Gemini-shaped in all of its parts, so no other provider can read one
 # even when it carries function declarations.
@@ -353,10 +362,15 @@ def _builtin_tool_provider(tool: dict[str, Any]) -> str | None:
     """
     tool_type = tool.get("type")
     if isinstance(tool_type, str):
-        if tool_type in _ANTHROPIC_BUILTIN_TOOL_TYPES or _ANTHROPIC_DATED_BUILTIN_TOOL_TYPE.search(
-            tool_type
-        ):
+        if tool_type in _ANTHROPIC_BUILTIN_TOOL_TYPES:
             return "anthropic"
+        if _ANTHROPIC_DATED_BUILTIN_TOOL_TYPE.search(tool_type):
+            undated_tool_type = _ANTHROPIC_DATED_BUILTIN_TOOL_TYPE.sub("", tool_type)
+            if (
+                undated_tool_type in _ANTHROPIC_DATED_BUILTIN_TOOL_PREFIXES
+                or undated_tool_type.startswith("tool_search_tool_")
+            ):
+                return "anthropic"
         if any(
             tool_type == name or tool_type.startswith(f"{name}_")
             for name in _OPENAI_BUILTIN_TOOL_TYPES
