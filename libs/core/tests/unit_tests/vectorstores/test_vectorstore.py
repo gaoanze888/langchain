@@ -148,6 +148,54 @@ def test_default_add_documents(vs_class: type[VectorStore]) -> None:
     assert store.get_by_ids(["6"]) == [Document(id="6", page_content="baz")]
 
 
+def test_default_add_texts_validates_ids_length() -> None:
+    """Default add_texts must reject IDs whose length differs from texts."""
+    store = CustomAddDocumentsVectorstore()
+
+    with pytest.raises(ValueError, match="number of ids must match"):
+        store.add_texts(["hello", "world"], ids=["3"])
+
+
+async def test_default_aadd_texts_validates_ids_length() -> None:
+    """Async default aadd_texts must reject mismatched IDs."""
+    store = CustomAddDocumentsVectorstore()
+
+    with pytest.raises(ValueError, match="number of ids must match"):
+        await store.aadd_texts(["hello", "world"], ids=["3"])
+
+
+def test_default_add_texts_accepts_iterators() -> None:
+    """Default add_texts must not consume iterators before building documents."""
+    store = CustomAddDocumentsVectorstore()
+    ids = store.add_texts(
+        iter(["hello", "world"]),
+        metadatas=[{"i": 1}, {"i": 2}],
+        ids=["3", "4"],
+    )
+
+    assert ids == ["3", "4"]
+    assert store.get_by_ids(["3", "4"]) == [
+        Document(id="3", page_content="hello", metadata={"i": 1}),
+        Document(id="4", page_content="world", metadata={"i": 2}),
+    ]
+
+
+async def test_default_aadd_texts_accepts_iterators() -> None:
+    """Async default aadd_texts must not consume iterators before building documents."""
+    store = CustomAddDocumentsVectorstore()
+    ids = await store.aadd_texts(
+        iter(["hello", "world"]),
+        metadatas=[{"i": 1}, {"i": 2}],
+        ids=["3", "4"],
+    )
+
+    assert ids == ["3", "4"]
+    assert store.get_by_ids(["3", "4"]) == [
+        Document(id="3", page_content="hello", metadata={"i": 1}),
+        Document(id="4", page_content="world", metadata={"i": 2}),
+    ]
+
+
 @pytest.mark.parametrize(
     "vs_class", [CustomAddTextsVectorstore, CustomAddDocumentsVectorstore]
 )
