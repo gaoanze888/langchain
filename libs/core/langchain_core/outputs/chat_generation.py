@@ -43,16 +43,12 @@ class ChatGeneration(Generation):
 
     @model_validator(mode="after")
     def set_text(self) -> Self:
-        """Set the text attribute to be the contents of the message.
-
-        Args:
-            values: The values of the object.
+        """Set the text attribute to the message's text content.
 
         Returns:
-            The values of the object with the text attribute set.
-
-        Raises:
-            ValueError: If the message is not a string or a list.
+            This chat generation with the text attribute populated from
+            `message.text`, while preserving legacy text blocks without a
+            `type` field.
         """
         # Check for legacy blocks with "text" key but no "type" field.
         # Otherwise, delegate to `message.text`.
