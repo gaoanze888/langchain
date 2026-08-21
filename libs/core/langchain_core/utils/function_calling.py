@@ -9,6 +9,7 @@ import logging
 import types
 import typing
 import uuid
+from collections.abc import Mapping as MappingABC
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -407,6 +408,9 @@ def convert_to_openai_function(
     """
     # Import locally to prevent circular import
     from langchain_core.tools import BaseTool  # noqa: PLC0415
+
+    if isinstance(function, MappingABC):
+        function = dict(function)
 
     if strict and isinstance(function, dict):
         function = copy.deepcopy(function)

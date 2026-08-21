@@ -1,5 +1,7 @@
 import typing
+from collections import ChainMap, UserDict
 from collections.abc import Callable, Iterable, Mapping, MutableMapping, Sequence
+from types import MappingProxyType
 from typing import Annotated as ExtensionsAnnotated
 from typing import (
     Any,
@@ -1476,6 +1478,22 @@ def test_convert_to_openai_tool_computer_passthrough() -> None:
     }
     result = convert_to_openai_tool(computer_tool)
     assert result == computer_tool
+
+
+def test_convert_to_openai_function_accepts_mapping_subclasses() -> None:
+    """Accept Mapping inputs as promised by the public type annotation."""
+    schema = {
+        "name": "lookup",
+        "description": "Look up a value.",
+        "parameters": {"type": "object", "properties": {}},
+    }
+
+    for mapping in (ChainMap(schema), UserDict(schema), MappingProxyType(schema)):
+        assert convert_to_openai_function(mapping) == schema
+        assert convert_to_openai_tool(mapping) == {
+            "type": "function",
+            "function": schema,
+        }
 
 
 def test_convert_to_openai_function_without_tools_module_imported(
