@@ -25,6 +25,26 @@ async def amanager() -> InMemoryRecordManager:
     return record_manager
 
 
+def test_update_rejects_empty_group_ids_for_nonempty_keys(
+    manager: InMemoryRecordManager,
+) -> None:
+    """Provided group_ids must have the same length as keys."""
+    with pytest.raises(
+        ValueError, match="Length of keys must match length of group_ids"
+    ):
+        manager.update(["key1"], group_ids=[])
+
+
+async def test_aupdate_rejects_empty_group_ids_for_nonempty_keys(
+    amanager: InMemoryRecordManager,
+) -> None:
+    """Async: provided group_ids must have the same length as keys."""
+    with pytest.raises(
+        ValueError, match="Length of keys must match length of group_ids"
+    ):
+        await amanager.aupdate(["key1"], group_ids=[])
+
+
 def test_update(manager: InMemoryRecordManager) -> None:
     """Test updating records in the database."""
     # no keys should be present in the set
